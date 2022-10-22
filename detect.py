@@ -6,6 +6,17 @@ import cv2
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dropout, Dense
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
+import traitlets
+from IPython.display import display
+import ipywidgets.widgets as widgets
+
+try:
+    from jetbot import Camera
+    from jetbot import bgr8_to_jpeg
+    from jetbot import Robot
+except Exception as e:
+    print(e)
+import time
 
 MODEL_PATH = os.path.join('model')
 MODEL_CHECKPOINT_PATH = os.path.join('model', 'best_model.ckpt')
@@ -56,6 +67,7 @@ def classify_image_opencv():
         image = preprocess_image(frame)
         pred_value = model.predict(image)
         print(pred_value)
+        print(pred_value[0])
 
         cv2.waitKey(1)
 
@@ -63,6 +75,23 @@ def classify_image_opencv():
     cv2.destroyAllWindows()
 
 
+def update(change):
+    global blocked_slider, robot
+    x = change['new']
+    x = preprocess_image(x)  # To wstawione moje
+    y = model.predict(x)
+
+    prob_blocked = float(y.flatten()[0])
+    print(prob_blocked)
+
+    blocked_slider.value = prob_blocked
+
+    if prob_blocked < 0.5:
+        robot.forward(speed_slider.value)
+    else:
+        robot.left(speed_slider.value)
+
+    time.sleep(0.001)
 
 
 def preprocess_image(frame):
@@ -76,5 +105,16 @@ def preprocess_image(frame):
 
 if __name__ == "__main__":
     model = load_model(MODEL_CHECKPOINT_PATH)
-    classify_image_opencv()
+    # classify_image_opencv()
 
+    camera = Camera.instance(width=50, height=50)
+    image = widgets.Image(format='jpeg', width=50, height=50)
+    blocked_slider = widgets.FloatSlider(description='blocked', min=0.0, max=1.0, orientation='vertical')
+    speed_slider = widgets.FloatSlider(description='speed', min=0.0, max=0.5, value=0.0, step=0.01,
+                                       orientation='horizontal')
+
+    camera_link = traitlets.dlink((camera, 'value'), (image, 'value'), transform=bgr8_to_jpeg)
+
+    display(widgets.VBox([widgets.HBox([image, blocked_slider]), speed_slider]))
+    robot = Robot()
+    update({'new': camera.value})  # we call the function once to initialize
